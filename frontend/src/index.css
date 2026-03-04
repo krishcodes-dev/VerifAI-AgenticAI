@@ -75,10 +75,32 @@
   }
 
   .dark {
-    /* Dark mode overrides if needed later */
+    /* Dark mode overrides */
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-    /* ... other dark mode vars */
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --input: 217.2 32.6% 17.5%;
+
+    /* Text Variables */
+    --text-primary: 210 40% 98%;
+    --text-muted: 215 20.2% 65.1%;
+
+    /* Surface & Borders */
+    --surface: 217.2 32.6% 17.5%;
+    --border: 217.2 32.6% 17.5%;
+    --border-subtle: 217.2 32.6% 17.5%;
   }
 
   body {

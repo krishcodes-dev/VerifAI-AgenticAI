@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowUpDown, ShoppingBag, Coffee, AlertCircle, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowUpDown, ShoppingBag, Coffee, AlertCircle, Search, ChevronLeft, ChevronRight, Film, Car, Zap } from 'lucide-react';
 import { cn } from '../../utils/transactionHelpers';
 import RowActions from './RowActions';
 import TransactionSparkline from './TransactionSparkline';
@@ -36,6 +36,9 @@ const TransactionsTable = ({
             <span className="flex items-center gap-1.5 text-xs text-text-muted capitalize">
                 {cat === 'food' && <Coffee size={14} className="text-orange-500" />}
                 {cat === 'shopping' && <ShoppingBag size={14} className="text-blue-500" />}
+                {cat === 'entertainment' && <Film size={14} className="text-purple-500" />}
+                {cat === 'transport' && <Car size={14} className="text-indigo-500" />}
+                {cat === 'utilities' && <Zap size={14} className="text-yellow-500" />}
                 {cat}
             </span>
         );

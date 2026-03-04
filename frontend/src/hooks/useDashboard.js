@@ -9,33 +9,44 @@ export const useDashboard = () => {
     const [stats, setStats] = useState(null);
     const [heatmapData, setHeatmapData] = useState([]);
     const [statsLoading, setStatsLoading] = useState(true);
+    const [statsError, setStatsError] = useState(null);
 
     // Transactions State
     const [transactions, setTransactions] = useState([]);
     const [pagination, setPagination] = useState({ current_page: 1, total_pages: 1, has_next: false });
     const [tableLoading, setTableLoading] = useState(true);
+    const [tableError, setTableError] = useState(null);
 
-    // Filter State
-    const [filters, setFilters] = useState({
-        search: '',
-        status: 'ALL'
-    });
-
+    // Filter / Page State
+    const [filters, setFilters] = useState({ status: 'ALL' });
     const [page, setPage] = useState(1);
 
-    // Fetch Stats
+    // ── Fetch Stats ───────────────────────────────────────────────
     useEffect(() => {
         const loadStats = async () => {
             setStatsLoading(true);
+            setStatsError(null);
             try {
-                const [statsData, riskData] = await Promise.all([
-                    dashboardApi.fetchDashboardStats(),
-                    dashboardApi.fetchRiskDistribution()
-                ]);
+                const statsData = await dashboardApi.fetchDashboardStats();
                 setStats(statsData);
-                setHeatmapData(riskData);
+
+                // risk_distribution is now included in the stats response
+                if (statsData?.risk_distribution) {
+                    setHeatmapData(statsData.risk_distribution);
+                }
             } catch (error) {
-                console.error("Failed to load dashboard stats", error);
+                console.error('Failed to load dashboard stats:', error);
+                setStatsError('Unable to load statistics. Please refresh the page.');
+                // Fallback to empty stats so the dashboard doesn't crash
+                setStats({
+                    total_transactions: 0,
+                    blocked: 0,
+                    held: 0,
+                    approved: 0,
+                    avg_fraud_score: 0,
+                    fraud_rate: 0,
+                    risk_distribution: [],
+                });
             } finally {
                 setStatsLoading(false);
             }
@@ -43,15 +54,18 @@ export const useDashboard = () => {
         loadStats();
     }, []);
 
-    // Fetch Transactions on filter/page change
+    // ── Fetch Transactions ────────────────────────────────────────
     const refreshTransactions = useCallback(async () => {
         setTableLoading(true);
+        setTableError(null);
         try {
-            const result = await dashboardApi.fetchTransactions(page, 10, filters);
+            const result = await dashboardApi.fetchTransactions(page, 20, filters);
             setTransactions(result.data);
             setPagination(result.pagination);
         } catch (error) {
-            console.error(error);
+            console.error('Failed to load transactions:', error);
+            setTableError('Unable to load transactions. Please try again.');
+            setTransactions([]);
         } finally {
             setTableLoading(false);
         }
@@ -61,15 +75,10 @@ export const useDashboard = () => {
         refreshTransactions();
     }, [refreshTransactions]);
 
-    // Handlers
-    const handleSearch = (term) => {
-        setFilters(prev => ({ ...prev, search: term }));
-        setPage(1); // Reset to first page
-    };
-
+    // ── Handlers ──────────────────────────────────────────────────
     const handleStatusFilter = (status) => {
         setFilters(prev => ({ ...prev, status }));
-        setPage(1);
+        setPage(1); // Reset to first page on any filter change
     };
 
     const handlePageChange = (newPage) => {
@@ -77,8 +86,12 @@ export const useDashboard = () => {
     };
 
     const handleTransactionAction = async (id, action) => {
-        await dashboardApi.takeAction(id, action);
-        refreshTransactions(); // Reload table
+        try {
+            await dashboardApi.verifyTransaction(id, action === 'APPROVE');
+            refreshTransactions();
+        } catch (error) {
+            console.error('Action failed:', error);
+        }
     };
 
     return {
@@ -89,10 +102,11 @@ export const useDashboard = () => {
         pagination,
         statsLoading,
         tableLoading,
+        statsError,
+        tableError,
         filters,
-        handleSearch,
         handleStatusFilter,
         handlePageChange,
-        handleTransactionAction
+        handleTransactionAction,
     };
 };

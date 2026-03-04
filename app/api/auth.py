@@ -96,6 +96,11 @@ class PasswordResetConfirm(BaseModel):
         return v
 
 
+class RefreshRequest(BaseModel):
+    """Body schema for token refresh — keeps the refresh token out of URL / logs."""
+    refresh_token: str
+
+
 # ============ ENDPOINTS ============
 
 @router.post("/signup", response_model=TokenResponse)
@@ -207,27 +212,26 @@ async def login(
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
-    refresh_token: str,
-    db: Session = Depends(get_db)
+    request: RefreshRequest,
+    db: Session = Depends(get_db),
 ):
     """
-    Use refresh token to get new access token.
+    Exchange a valid refresh token for a new access token.
+    The refresh token must be sent in the JSON request body (not a URL parameter)
+    to prevent it from appearing in server access logs or browser history.
     """
     auth_service = AuthService()
-    
-    new_access_token = auth_service.refresh_access_token(refresh_token)
+
+    new_access_token = auth_service.refresh_access_token(request.refresh_token)
     if not new_access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token"
+            detail="Invalid or expired refresh token",
         )
-    
-    # Get user from token to return full token pair
-    payload = auth_service.verify_token(refresh_token)
-    
+
     return TokenResponse(
         access_token=new_access_token,
-        refresh_token=refresh_token,  # Refresh token still valid
+        refresh_token=request.refresh_token,  # Refresh token remains valid until its own expiry
         token_type="Bearer",
         expires_in=3600,
     )

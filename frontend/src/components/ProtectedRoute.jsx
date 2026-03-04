@@ -1,11 +1,24 @@
 import React, { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
+import useAuthStore from '../stores/useAuthStore';
 
 const ProtectedRoute = ({ children }) => {
     const { isAuthenticated, isLoading } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
+
+    useEffect(() => {
+        let timer;
+        if (isLoading) {
+            timer = setTimeout(() => {
+                console.warn("Auth loading timed out, redirecting to login");
+                useAuthStore.getState().logout();
+                navigate('/auth?view=login', { replace: true });
+            }, 3000); // 3 second timeout
+        }
+        return () => clearTimeout(timer);
+    }, [isLoading, navigate]);
 
     useEffect(() => {
         if (!isLoading && !isAuthenticated) {

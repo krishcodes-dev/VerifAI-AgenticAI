@@ -17,6 +17,8 @@ const Dashboard = () => {
         pagination,
         statsLoading,
         tableLoading,
+        statsError,
+        tableError,
         filters,
         handleStatusFilter,
         handlePageChange,
@@ -49,36 +51,41 @@ const Dashboard = () => {
                     <>
                         <StatsCard
                             title="Total Transactions"
-                            value={stats?.total_transactions.toLocaleString()}
+                            value={stats?.total_transactions?.toLocaleString() ?? '—'}
                             icon={Activity}
                             trend="up"
-                            trendValue={12}
+                            trendValue={null}
                             index={0}
                         />
                         <StatsCard
-                            title="Blocked Today"
-                            value={stats?.blocked_today}
+                            title="Blocked"
+                            value={stats?.blocked ?? '—'}
                             icon={ShieldAlert}
                             trend="up"
-                            trendValue={5}
+                            trendValue={null}
                             index={1}
                         />
                         <StatsCard
                             title="Avg Risk Score"
-                            value={stats?.avg_risk_score}
+                            value={stats?.avg_fraud_score != null ? `${(stats.avg_fraud_score * 100).toFixed(1)}%` : '—'}
                             icon={BarChart2}
                             trend="down"
-                            trendValue={2}
+                            trendValue={null}
                             index={2}
                         />
                         <StatsCard
-                            title="Active Devices"
-                            value={stats?.active_devices.toLocaleString()}
+                            title="Fraud Rate"
+                            value={stats?.fraud_rate != null ? `${(stats.fraud_rate * 100).toFixed(1)}%` : '—'}
                             icon={Smartphone}
                             trend="up"
-                            trendValue={8}
+                            trendValue={null}
                             index={3}
                         />
+                        {statsError && (
+                            <div className="col-span-full text-sm text-red-500 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-4 py-3">
+                                ⚠️ {statsError}
+                            </div>
+                        )}
                     </>
                 )}
             </div>

@@ -1,13 +1,11 @@
-from datetime import datetime
-from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey, Enum as SQLEnum
-from sqlalchemy.orm import DeclarativeBase, relationship
+from datetime import datetime, timedelta
+from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey, Integer, Enum as SQLEnum
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship
 import uuid
 import enum
 
-
-class Base(DeclarativeBase):
-    """SQLAlchemy 2.x declarative base — replaces the deprecated declarative_base()."""
-    pass
+Base = declarative_base()
 
 class User(Base):
     """User model for VerifAI"""

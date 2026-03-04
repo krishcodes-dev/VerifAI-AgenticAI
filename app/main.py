@@ -1,74 +1,95 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 
+from app.config import get_settings
+from app.database import init_db
+
 # Import routers
 from app.api import transactions, users, auth, demo
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
 logger = logging.getLogger(__name__)
 
-# Create FastAPI app
+settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: startup and shutdown logic."""
+    # ── Startup ──────────────────────────────────────────────────
+    logger.info("🚀 VerifAI starting up (env=%s)", settings.ENVIRONMENT)
+    try:
+        init_db()
+        logger.info("✅ Database tables verified / created")
+    except Exception as exc:
+        logger.critical("💥 Database initialisation failed: %s", exc)
+        raise
+
+    yield  # Application runs here
+
+    # ── Shutdown ─────────────────────────────────────────────────
+    logger.info("👋 VerifAI shutting down")
+
+
+# Disable interactive API docs in production to avoid information leakage
+_docs_url = "/docs" if settings.DEBUG else None
+_redoc_url = "/redoc" if settings.DEBUG else None
+
 app = FastAPI(
-    title="VerifAI - Agentic Fraud Detection",
-    description="Real-time autonomous fraud detection and prevention",
+    title="VerifAI - Fraud Detection API",
+    description="Real-time ML-based fraud detection and prevention",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
+    lifespan=lifespan,
 )
 
-# Add CORS middleware
+# ── CORS ─────────────────────────────────────────────────────────────
+# Using explicit allowed origins — wildcard with credentials is rejected
+# by browsers and is a security vulnerability. Origins are derived from
+# settings so they can be overridden per environment.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
-# Include routers
+# ── Routers ──────────────────────────────────────────────────────────
 app.include_router(transactions.router)
 app.include_router(users.router)
 app.include_router(auth.router)
 app.include_router(demo.router)
 
-# Root endpoint
+
+# ── Health / Root ─────────────────────────────────────────────────────
 @app.get("/")
 async def root():
     return {
-        "service": "VerifAI - Agentic Fraud Detection",
-        "status": "online",
+        "service": "VerifAI Fraud Detection API",
         "version": "1.0.0",
-        "docs": "http://localhost:8000/docs",
-        "redoc": "http://localhost:8000/redoc"
+        "environment": settings.ENVIRONMENT,
+        "status": "online",
     }
 
-# Health check endpoint
+
 @app.get("/health")
 async def health_check():
-    return {
-        "status": "healthy",
-        "message": "VerifAI is running"
-    }
+    return {"status": "healthy", "service": "VerifAI"}
 
-# Startup event
-@app.on_event("startup")
-async def startup_event():
-    logger.info("✅ VerifAI starting up...")
-    logger.info("📚 API Docs: http://localhost:8000/docs")
-    logger.info("🔍 ReDoc: http://localhost:8000/redoc")
-
-# Shutdown event
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("👋 VerifAI shutting down...")
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=settings.DEBUG,
     )

@@ -1,57 +1,83 @@
-import { MOCK_TRANSACTIONS, MOCK_STATS } from '../data/mockData';
-import api from './api'; // Use the real Axios instance for auth/user calls
+/**
+ * dashboardApi.js
+ *
+ * Connects the dashboard and transactions UI to the real backend API.
+ * All mock data sources have been replaced with authenticated API calls.
+ *
+ * Endpoints used:
+ *   GET /api/v1/transactions/stats  → dashboard stat cards
+ *   GET /api/v1/transactions        → transaction list
+ *   POST /api/v1/transactions/process → process a new transaction
+ */
 
-// Mock delay to simulate network latency
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+import api from './api';
 
 export const dashboardApi = {
+    /**
+     * Fetch aggregated statistics for the authenticated user's dashboard.
+     * Returns: { total_transactions, blocked, held, approved, avg_fraud_score, risk_distribution }
+     */
     fetchDashboardStats: async () => {
-        await delay(600);
-        return MOCK_STATS;
+        const response = await api.get('/v1/transactions/stats');
+        return response.data;
     },
 
-    fetchTransactions: async (page = 1, limit = 10, filters = {}) => {
-        await delay(500);
-        let data = [...MOCK_TRANSACTIONS];
+    /**
+     * Fetch a paginated, optionally filtered list of transactions.
+     * @param {number} page - 1-based page number
+     * @param {number} limit - items per page
+     * @param {Object} filters - { search, status, sortBy, sortOrder }
+     */
+    fetchTransactions: async (page = 1, limit = 20, filters = {}) => {
+        const params = new URLSearchParams();
+        params.set('page', page);
+        params.set('limit', limit);
 
-        // Client-side filtering simulation
-        if (filters.search) {
-            const q = filters.search.toLowerCase();
-            data = data.filter(t => t.merchant.toLowerCase().includes(q));
-        }
         if (filters.status && filters.status !== 'ALL') {
-            data = data.filter(t => t.status === filters.status);
+            params.set('status', filters.status.toUpperCase());
         }
 
-        const total = data.length;
-        const start = (page - 1) * limit;
-        const paginatedData = data.slice(start, start + limit);
+        const response = await api.get(`/v1/transactions?${params.toString()}`);
 
+        // Normalise the response shape to match what the UI components expect
+        const { transactions, pagination } = response.data;
         return {
-            data: paginatedData,
+            data: transactions,
             pagination: {
-                current_page: page,
-                total_pages: Math.ceil(total / limit),
-                total_items: total,
-                has_next: start + limit < total
-            }
+                current_page: pagination.page,
+                total_pages: pagination.total_pages,
+                total_items: pagination.total,
+                has_next: pagination.page < pagination.total_pages,
+            },
         };
     },
 
-    takeAction: async (transactionId, action) => {
-        await delay(300);
-        // In a real app, this would hit PUT /api/transactions/:id/action
-        return { success: true, message: `Transaction ${action.toLowerCase()} successfully` };
+    /**
+     * Process a transaction through the fraud detection pipeline.
+     * @param {Object} transactionData - { user_id, amount, merchant, merchant_category, device_type, device_ip, user_location, email }
+     */
+    processTransaction: async (transactionData) => {
+        const response = await api.post('/v1/transactions/process', transactionData);
+        return response.data;
     },
 
-    fetchRiskDistribution: async () => {
-        await delay(400);
-        return [
-            { name: '0-20', value: 35 },
-            { name: '20-40', value: 25 },
-            { name: '40-60', value: 20 },
-            { name: '60-80', value: 15 },
-            { name: '80-100', value: 5 },
-        ];
-    }
+    /**
+     * Get the status of a specific transaction by ID.
+     */
+    fetchTransactionStatus: async (transactionId) => {
+        const response = await api.get(`/v1/transactions/status/${transactionId}`);
+        return response.data;
+    },
+
+    /**
+     * Record user feedback on a held/flagged transaction.
+     * @param {string} transactionId
+     * @param {boolean} userConfirmed - true if user says transaction is legitimate
+     */
+    verifyTransaction: async (transactionId, userConfirmed) => {
+        const response = await api.post(
+            `/v1/transactions/verify/${transactionId}?user_confirmed=${userConfirmed}`
+        );
+        return response.data;
+    },
 };

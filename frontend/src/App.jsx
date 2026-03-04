@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import useAuthStore from './stores/useAuthStore';
 import LandingPage from './pages/LandingPage';
 
 import AuthPage from './pages/AuthPage';
@@ -17,6 +18,14 @@ import SettingsPage from './pages/SettingsPage';
 import ProfilePage from './pages/ProfilePage';
 
 function App() {
+  const { fetchMe, access_token } = useAuthStore();
+
+  useEffect(() => {
+    if (access_token) {
+      fetchMe();
+    }
+  }, [fetchMe, access_token]);
+
   return (
     <Router>
       <Toaster position="top-right" />
