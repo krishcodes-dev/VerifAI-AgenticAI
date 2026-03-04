@@ -25,9 +25,9 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 VerifAI starting up (env=%s)", settings.ENVIRONMENT)
     try:
         init_db()
-        logger.info("✅ Database tables verified / created")
+        logger.info("✅ Database connection verified (schema managed by Alembic)")
     except Exception as exc:
-        logger.critical("💥 Database initialisation failed: %s", exc)
+        logger.critical("💥 Database connection failed: %s", exc)
         raise
 
     yield  # Application runs here

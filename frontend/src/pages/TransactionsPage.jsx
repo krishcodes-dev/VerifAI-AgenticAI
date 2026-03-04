@@ -11,8 +11,8 @@ import SavedViews from '../components/Transactions/SavedViews';
 import BulkActions from '../components/Transactions/BulkActions';
 import { Button } from '../components/ui/Button';
 
-// Service
-import { fetchMockTransactions } from '../services/mockTransactions';
+// Service — real API
+import { dashboardApi } from '../services/dashboardApi';
 
 const TransactionsPage = () => {
     // State
@@ -25,20 +25,29 @@ const TransactionsPage = () => {
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [currentView, setCurrentView] = useState('all');
 
-    // Fetch Data
+    // Fetch Data from real backend
     const loadTransactions = useCallback(async () => {
         setLoading(true);
         try {
-            const data = await fetchMockTransactions(filters);
-            setTransactions(data.transactions);
+            const result = await dashboardApi.fetchTransactions(
+                filters.page,
+                filters.limit,
+                {
+                    status: filters.status,
+                    search: filters.search,
+                }
+            );
+            // Normalise response shape for the table components
+            setTransactions(result.data);
             setPagination({
-                page: data.page,
-                totalPages: data.totalPages,
-                total: data.total
+                page: result.pagination.current_page,
+                totalPages: result.pagination.total_pages,
+                total: result.pagination.total_items,
             });
         } catch (error) {
-            console.error("Failed to load transactions", error);
-            toast.error("Failed to load transactions.");
+            console.error('Failed to load transactions', error);
+            toast.error('Failed to load transactions — are you logged in?');
+            setTransactions([]);
         } finally {
             setLoading(false);
         }

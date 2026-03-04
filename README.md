@@ -21,8 +21,14 @@ Real-time autonomous fraud detection and prevention using ML + WhatsApp integrat
 python3.11 -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-docker-compose up -d
 ```
+
+### Database & Migrations
+Ensure PostgreSQL is running locally. Then apply the database schema migrations:
+```bash
+alembic upgrade head
+```
+*(To generate a new migration after changing models: `alembic revision --autogenerate -m "description"`)*
 
 ### Train Model
 ```bash
@@ -31,7 +37,7 @@ python app/ml/model_training.py
 
 ### Run Server
 ```bash
-python -m uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload --port 8000
 ```
 Server runs at: http://localhost:8000
 
