@@ -143,6 +143,7 @@ FEATURE_COLUMNS = [
     "hour_of_day",
     "day_of_week",
     "is_night_transaction",
+    "is_weekend",           # generated in the time block (right after is_night)
     "location_distance_km",
     "is_unusual_location",
     "transactions_today",
@@ -151,5 +152,4 @@ FEATURE_COLUMNS = [
     "is_high_risk_merchant_category",
     "merchant_seen_before",
     "has_vacation_pattern",
-    "is_weekend",
 ]
