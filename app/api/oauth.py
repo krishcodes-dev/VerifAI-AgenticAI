@@ -37,6 +37,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import User
 from app.services.auth_service import AuthService
+from app.services.audit_service import audit_log, EVENT_GOOGLE_LOGIN, SEVERITY_INFO, SEVERITY_WARNING
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["Auth - OAuth"])
@@ -183,6 +184,12 @@ async def google_callback(
                 url=f"{settings.FRONTEND_URL}/auth?view=login&error=account_locked"
             )
         logger.info("Google login: existing user %s", google_email)
+        audit_log(
+            db, EVENT_GOOGLE_LOGIN, SEVERITY_INFO,
+            description=f"Google OAuth login: existing user {google_email}",
+            user_id=user.id,
+            meta={"email": google_email, "new_user": False},
+        )
     else:
         # New user — create account (no password since they'll always use Google)
         user = User(
@@ -196,6 +203,12 @@ async def google_callback(
             db.commit()
             db.refresh(user)
             logger.info("Google login: created new user %s", google_email)
+            audit_log(
+                db, EVENT_GOOGLE_LOGIN, SEVERITY_INFO,
+                description=f"Google OAuth login: new user created {google_email}",
+                user_id=user.id,
+                meta={"email": google_email, "new_user": True},
+            )
         except Exception as exc:
             db.rollback()
             logger.error("Failed to create Google user: %s", exc, exc_info=True)

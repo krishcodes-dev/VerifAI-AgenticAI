@@ -25,7 +25,8 @@ httpx==0.25.2
 # Security & Validation
 pydantic==2.5.0
 pydantic-settings==2.1.0
-python-jose[cryptography]==3.3.0
+# python-jose removed — codebase uses PyJWT (import jwt) exclusively.
+# python-jose was never imported and is a dead CVE surface.
 passlib[bcrypt]==1.7.4
 
 # Utils

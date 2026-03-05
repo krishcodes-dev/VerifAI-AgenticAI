@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -69,7 +71,51 @@ app = FastAPI(
 # Endpoints import `limiter` directly from this module for their decorators.
 app.state.limiter = limiter
 
-# ── Middleware ────────────────────────────────────────────────────────────────
+# ── Security Headers Middleware ───────────────────────────────────────────────
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Attach standard security headers to every response.
+
+    Headers applied:
+      X-Content-Type-Options: nosniff
+        Prevents MIME-type sniffing attacks.
+      X-Frame-Options: DENY
+        Prevents clickjacking by disallowing framing.
+      Content-Security-Policy: default-src 'self'
+        Restricts resource loading to the same origin by default.
+        Tighten further (add CDN domains, etc.) once frontend is on a fixed domain.
+      Strict-Transport-Security
+        Tells browsers to always use HTTPS for this origin.
+        Omitted in development to avoid breaking localhost HTTP.
+      X-XSS-Protection: 0
+        Disables the broken legacy XSS auditor (modern best-practice is to disable
+        it and rely on CSP instead — see OWASP recommendation).
+      Referrer-Policy: strict-origin-when-cross-origin
+        Limits referrer leakage to same-origin requests only.
+      Permissions-Policy: geolocation=(), microphone=(), camera=()
+        Disables browser APIs that this API server never needs.
+    """
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        response.headers["X-XSS-Protection"] = "0"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        # HSTS: only send on non-dev to avoid browser caching localhost as HTTPS-only
+        if settings.ENVIRONMENT != "development":
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=63072000; includeSubDomains; preload"
+            )
+        return response
+
+
+# ── Middleware (order matters: first registered = outermost wrapper) ──────────
+# SecurityHeaders → SlowAPI → CORS → App
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(

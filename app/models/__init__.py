@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey, Enum as SQLEnum, JSON
 from sqlalchemy.orm import DeclarativeBase, relationship
 import uuid
 import enum
@@ -79,8 +79,8 @@ class Transaction(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     processed_at = Column(DateTime, nullable=True)
     
-    # Metadata
-    meta_data = Column(String(2000), nullable=True)  # JSON string
+    # Metadata — stored as native JSON for efficient querying
+    meta_data = Column(JSON, nullable=True)
     
     # Relationships
     user = relationship("User", back_populates="transactions")
@@ -142,8 +142,8 @@ class VerificationToken(Base):
     used_at = Column(DateTime, nullable=True)
     is_used = Column(Boolean, default=False)
     
-    # Metadata
-    meta_data = Column(String(500), nullable=True)  # JSON string - can store extra data
+    # Metadata — stored as native JSON
+    meta_data = Column(JSON, nullable=True)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -174,7 +174,9 @@ class AuditLog(Base):
     # Context
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(String(500), nullable=True)
-    meta_data = Column(String(2000), nullable=True)  # JSON string
+
+    # Metadata — stored as native JSON
+    meta_data = Column(JSON, nullable=True)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, index=True)

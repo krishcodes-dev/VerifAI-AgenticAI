@@ -1,5 +1,6 @@
 import smtplib
 import logging
+import html as html_lib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
@@ -126,7 +127,7 @@ class EmailService:
             <span class="banner"></span>
 
             <p style="margin:6px 0 10px;font-size:15px;color:#0B1A2B;font-weight:600">
-                Hi {user_name} 👋,
+                Hi {html_lib.escape(user_name)} 👋,
             </p>
             
             <p class="muted" style="margin:0 0 16px;line-height:1.6">
@@ -247,7 +248,7 @@ class EmailService:
             <span class="banner"></span>
 
             <p style="margin:6px 0 10px;font-size:15px;color:#0B1A2B;font-weight:600">
-                Hi {user_name},
+                Hi {html_lib.escape(user_name)},
             </p>
             
             <p class="muted" style="margin:0 0 16px">
@@ -400,7 +401,7 @@ class EmailService:
             <span class="banner"></span>
 
             <p style="margin:6px 0 10px;font-size:15px;color:#0B1A2B;font-weight:600">
-                Hi {user_name},
+                Hi {html_lib.escape(user_name)},
             </p>
             
             <p class="muted" style="margin:0 0 12px">
@@ -409,8 +410,8 @@ class EmailService:
 
             <ul class="detail-list">
                 <li><span class="label">Amount</span><span class="value">₹{amount:,.2f}</span></li>
-                <li><span class="label">Merchant</span><span class="value">{merchant}</span></li>
-                <li><span class="label">Category</span><span class="value">{category}</span></li>
+                <li><span class="label">Merchant</span><span class="value">{html_lib.escape(merchant)}</span></li>
+                <li><span class="label">Category</span><span class="value">{html_lib.escape(category)}</span></li>
                 <li><span class="label">Fraud Score</span><span class="value">{fraud_percentage}%</span></li>
                 <li><span class="label">Risk Level</span><span class="value">{risk_level}</span></li>
                 <li><span class="label">Status</span><span class="value">⛔ BLOCKED</span></li>
@@ -540,7 +541,7 @@ class EmailService:
             <span class="banner"></span>
 
             <p style="margin:6px 0 10px;font-size:15px;color:#0B1A2B;font-weight:600">
-                Hi {user_name},
+                Hi {html_lib.escape(user_name)},
             </p>
             
             <p class="muted" style="margin:0 0 12px">
@@ -549,7 +550,7 @@ class EmailService:
 
             <ul class="detail-list">
                 <li><span class="label">Amount</span><span class="value">₹{amount:,.2f}</span></li>
-                <li><span class="label">Merchant</span><span class="value">{merchant}</span></li>
+                <li><span class="label">Merchant</span><span class="value">{html_lib.escape(merchant)}</span></li>
                 <li><span class="label">Date & Time</span><span class="value">{timestamp}</span></li>
                 <li><span class="label">Transaction ID</span><span class="value">{tx_id}</span></li>
                 <li><span class="label">Status</span><span class="value">✅ Completed</span></li>
@@ -590,7 +591,7 @@ class EmailService:
         """Send demo request email to support team"""
         
         recipient_email = "krishsanghavi09@gmail.com"
-        subject = f" New Demo Request from {user_company}"
+        subject = f" New Demo Request from {html_lib.escape(user_company)}"
         timestamp = datetime.now().strftime("%d %b %Y, %I:%M %p")
         LOGO_URL = "https://raw.githubusercontent.com/ethancodes-6969/VerifAI-AgenticAI/main/assets/verifai-logo.png"
         
@@ -647,11 +648,11 @@ class EmailService:
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <td style="font-size:13px;color:#444;font-weight:600;padding-bottom:6px;">Name</td>
-                        <td style="font-size:13px;color:#0b1a2b;text-align:right;padding-bottom:6px;">{user_name}</td>
+                        <td style="font-size:13px;color:#0b1a2b;text-align:right;padding-bottom:6px;">{html_lib.escape(user_name)}</td>
                       </tr>
                       <tr>
                         <td style="font-size:13px;color:#444;font-weight:600;padding-bottom:6px;">Company</td>
-                        <td style="font-size:13px;color:#0b1a2b;text-align:right;padding-bottom:6px;">{user_company}</td>
+                        <td style="font-size:13px;color:#0b1a2b;text-align:right;padding-bottom:6px;">{html_lib.escape(user_company)}</td>
                       </tr>
                       <tr>
                         <td style="font-size:13px;color:#444;font-weight:600;padding-bottom:6px;">User Email</td>
@@ -669,7 +670,7 @@ class EmailService:
                         <td style="font-size:13px;color:#444;font-weight:600;padding-top:8px;vertical-align:top;" colspan="2">
                           <div style="margin-top:8px;margin-bottom:4px;">Requirements:</div>
                           <div style="font-weight:400;color:#0b1a2b;background:#f9f9f9;padding:8px;border-radius:4px;font-size:13px;line-height:1.4;">
-                            {user_requirement if user_requirement else "No specific requirements provided."}
+                            {html_lib.escape(user_requirement) if user_requirement else "No specific requirements provided."}
                           </div>
                         </td>
                       </tr>

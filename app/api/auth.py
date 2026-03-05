@@ -6,6 +6,13 @@ from app.database import get_db
 from app.models import User, VerificationToken, VerificationTokenType
 from app.services.auth_service import AuthService
 from app.services.email_service import EmailService
+from app.services.audit_service import (
+    audit_log,
+    EVENT_LOGIN_SUCCESS, EVENT_LOGIN_FAILURE, EVENT_LOGOUT,
+    EVENT_SIGNUP, EVENT_TOKEN_REFRESH, EVENT_PASSWORD_RESET_REQUEST,
+    EVENT_PASSWORD_RESET_COMPLETE, EVENT_EMAIL_VERIFIED, EVENT_ACCOUNT_LOCKED,
+    SEVERITY_INFO, SEVERITY_WARNING, SEVERITY_CRITICAL,
+)
 from datetime import datetime, timedelta
 import logging
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -162,7 +169,17 @@ async def signup(
         )
         
         logger.info(f"✅ User registered: {user.email}")
-        
+
+        # Audit: successful signup
+        audit_log(
+            db, EVENT_SIGNUP, SEVERITY_INFO,
+            description=f"New user registered: {user.email}",
+            user_id=user.id,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            meta={"email": user.email},
+        )
+
         # Return tokens
         tokens = auth_service.create_token_pair(user.id, user.email)
         return TokenResponse(**tokens)
@@ -192,6 +209,16 @@ async def login(
     # Find user
     user = db.query(User).filter(User.email == body.email).first()
     if not user or not auth_service.verify_password(body.password, user.password_hash):
+        # Audit: failed login attempt — we don't know the user_id if email doesn't exist
+        audit_log(
+            db, EVENT_LOGIN_FAILURE, SEVERITY_WARNING,
+            description=f"Failed login attempt for email: {body.email}",
+            user_id=user.id if user else None,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            meta={"email": body.email},
+        )
+        db.commit()  # Flush the audit log even on failed login
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
@@ -200,6 +227,15 @@ async def login(
     # Check if account is locked
     if user.is_account_locked:
         if user.locked_until and datetime.utcnow() < user.locked_until:
+            audit_log(
+                db, EVENT_LOGIN_FAILURE, SEVERITY_WARNING,
+                description=f"Login blocked — account locked: {user.email}",
+                user_id=user.id,
+                ip_address=request.client.host if request.client else None,
+                user_agent=request.headers.get("user-agent"),
+                meta={"locked_until": str(user.locked_until)},
+            )
+            db.commit()
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Account locked until {user.locked_until}"
@@ -208,13 +244,24 @@ async def login(
             # Unlock expired lock
             user.is_account_locked = False
             user.locked_until = None
-    
+
     # Update last login
     user.last_login = datetime.utcnow()
+
+    # Audit: successful login
+    audit_log(
+        db, EVENT_LOGIN_SUCCESS, SEVERITY_INFO,
+        description=f"User logged in: {user.email}",
+        user_id=user.id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        meta={"email": user.email},
+    )
+
     db.commit()
-    
+
     logger.info(f"✅ User logged in: {user.email}")
-    
+
     # Return tokens
     tokens = auth_service.create_token_pair(user.id, user.email)
     return TokenResponse(**tokens)
@@ -240,6 +287,26 @@ async def refresh_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
         )
+
+    # Verify the refresh token payload to get user_id for audit log
+    try:
+        import jwt as _jwt
+        payload = _jwt.decode(
+            body.refresh_token,
+            auth_service.settings.SECRET_KEY,
+            algorithms=[auth_service.algorithm],
+            options={"verify_exp": False},
+        )
+        audit_log(
+            db, EVENT_TOKEN_REFRESH, SEVERITY_INFO,
+            description="Access token refreshed",
+            user_id=payload.get("sub"),
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+        db.commit()
+    except Exception:
+        pass  # Audit-only — never block the refresh
 
     return TokenResponse(
         access_token=new_access_token,
@@ -291,6 +358,28 @@ async def logout(
 
     logger.info("Logout: revoked=%s failed=%s", revoked, failed)
 
+    # Decode token to get user_id for audit log (without verifying — it's already
+    # being revoked so we don't need it to be valid)
+    try:
+        import jwt as _jwt
+        payload = _jwt.decode(
+            access_token,
+            auth_service.settings.SECRET_KEY,
+            algorithms=[auth_service.algorithm],
+            options={"verify_exp": False, "verify_signature": True},
+        )
+        audit_log(
+            db, EVENT_LOGOUT, SEVERITY_INFO,
+            description="User logged out",
+            user_id=payload.get("sub"),
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            meta={"revoked": revoked},
+        )
+        db.commit()
+    except Exception:
+        pass  # Audit-only — never block logout
+
     return {
         "message": "Logged out successfully",
         "revoked": revoked,
@@ -339,14 +428,20 @@ async def verify_email(
     # Mark token as used and user as verified
     verification_token.is_used = True
     verification_token.used_at = datetime.utcnow()
-    
+
     user = verification_token.user
     user.is_email_verified = True
-    
+
+    audit_log(
+        db, EVENT_EMAIL_VERIFIED, SEVERITY_INFO,
+        description=f"Email verified: {user.email}",
+        user_id=user.id,
+        meta={"email": user.email},
+    )
     db.commit()
-    
+
     logger.info(f"✅ Email verified: {user.email}")
-    
+
     return {"message": "Email verified successfully"}
 
 
