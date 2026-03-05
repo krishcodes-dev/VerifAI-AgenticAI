@@ -95,8 +95,15 @@ const useAuthStore = create(
                 }
             },
 
-            // Logout Action
-            logout: () => {
+            // Logout Action — revokes tokens server-side before clearing local state
+            logout: async () => {
+                const { refresh_token } = get();
+                // Best-effort server-side revocation
+                try {
+                    await api.post('/auth/logout', { refresh_token });
+                } catch (err) {
+                    console.warn('Server-side logout failed (token will expire naturally):', err);
+                }
                 clearAuthTokens();
                 set({
                     user: null,

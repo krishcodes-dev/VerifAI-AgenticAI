@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from pydantic import BaseModel, EmailStr, validator
+from typing import Optional
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, VerificationToken, VerificationTokenType
@@ -247,6 +248,55 @@ async def refresh_token(
         expires_in=3600,
     )
 
+
+class LogoutRequest(BaseModel):
+    """Optional body — pass refresh_token to revoke both tokens at once."""
+    refresh_token: Optional[str] = None
+
+
+@router.post("/logout")
+@limiter.limit("30/minute")
+async def logout(
+    request: Request,
+    body: LogoutRequest = LogoutRequest(),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """
+    Logout the current user by revoking their JWT tokens.
+
+    - The access token from the Authorization header is always revoked.
+    - If refresh_token is provided in the body, it is revoked too.
+
+    Revoked tokens are stored in Redis with a TTL matching their natural expiry,
+    so they auto-clean up without manual pruning.
+    """
+    auth_service = AuthService()
+    access_token = credentials.credentials
+
+    revoked = []
+    failed = []
+
+    # Always revoke the access token
+    if auth_service.revoke_token(access_token):
+        revoked.append("access_token")
+    else:
+        failed.append("access_token")
+
+    # Optionally revoke refresh token too
+    if body.refresh_token:
+        if auth_service.revoke_token(body.refresh_token):
+            revoked.append("refresh_token")
+        else:
+            failed.append("refresh_token")
+
+    logger.info("Logout: revoked=%s failed=%s", revoked, failed)
+
+    return {
+        "message": "Logged out successfully",
+        "revoked": revoked,
+        "note": "Tokens are immediately invalid." if not failed else
+                "Some tokens could not be revoked (Redis may be unavailable); they will expire naturally.",
+    }
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user(

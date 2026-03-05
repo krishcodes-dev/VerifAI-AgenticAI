@@ -1,72 +1,92 @@
 """
-history_store.py — In-Process User Transaction History Cache
+app/services/history_store.py
 
-IMPORTANT LIMITATIONS:
-  - This store lives in memory within a single process. All data is
-    lost when the application restarts or redeploys.
-  - It does NOT scale horizontally — different server instances will
-    have independent, inconsistent history stores.
+User transaction history cache with Redis backend and in-memory fallback.
 
-PRODUCTION RECOMMENDATION:
-  Replace this with one of:
-  (a) Database queries against the Transaction table (already persisted by the router)
-  (b) Redis RPUSH/LRANGE with per-user TTL for fast, shared cache
+Architecture:
+  • Primary: Redis LPUSH list per user, key = verifai:history:{user_id}
+    - Bounded to MAX_HISTORY_PER_USER entries via LTRIM
+    - TTL of HISTORY_TTL_SECONDS (7 days) so stale users auto-expire
+    - Survives server restarts and works across multiple server instances
+  • Fallback: asyncio-lock-guarded in-memory dict
+    - Used automatically when Redis is unavailable
+    - Bounded to MAX_HISTORY_PER_USER with the same cap
+    - Lost on restart (same behaviour as before this sprint)
 
-For the current MVP, this store provides same-session behavioural baseline
-calculation which is sufficient for single-instance development use.
-
-Each user's history is capped at MAX_HISTORY_PER_USER to prevent memory leaks.
+The calling code (agent.py) is unchanged — it still calls
+  await store.add_transaction(user_id, tx)
+  await store.get_user_history(user_id)
 """
 
 import asyncio
+import json
 import logging
 from collections import defaultdict
 
+from app.services.redis_client import redis_lpush_bounded, redis_lrange, redis_delete
+
 logger = logging.getLogger(__name__)
 
-# Maximum number of transactions kept per user. Oldest entries are dropped
-# when this limit is exceeded to prevent unbounded memory growth.
 MAX_HISTORY_PER_USER = 200
+HISTORY_TTL_SECONDS = 7 * 24 * 3600  # 7 days
+_REDIS_KEY_PREFIX = "verifai:history:"
 
 
 class UserTransactionHistory:
     """
-    Thread-safe, in-memory store for user transaction history.
-    Used by FeatureEngineer to compute behavioural baselines per user.
+    Thread-safe transaction history store backed by Redis (with in-memory fallback).
     """
 
     def __init__(self):
-        self._history: dict[str, list[dict]] = defaultdict(list)
+        # In-memory fallback (used when Redis is unavailable)
+        self._memory: dict[str, list[dict]] = defaultdict(list)
         self._lock = asyncio.Lock()
 
-    async def add_transaction(self, user_id: str, transaction: dict) -> None:
-        """
-        Append a transaction to the user's in-memory history.
-        Trims to MAX_HISTORY_PER_USER to prevent unbounded growth.
-        """
-        async with self._lock:
-            history = self._history[user_id]
-            history.append(transaction)
+    def _redis_key(self, user_id: str) -> str:
+        return f"{_REDIS_KEY_PREFIX}{user_id}"
 
-            # Enforce memory cap — keep only the most recent entries
+    async def add_transaction(self, user_id: str, transaction: dict) -> None:
+        """Prepend a transaction to the user's history (Redis-first, memory fallback)."""
+        serialized = json.dumps(transaction, default=str)
+
+        # Try Redis first
+        success = redis_lpush_bounded(
+            key=self._redis_key(user_id),
+            value=serialized,
+            max_len=MAX_HISTORY_PER_USER,
+            ttl=HISTORY_TTL_SECONDS,
+        )
+        if success:
+            return
+
+        # Fallback: in-memory
+        async with self._lock:
+            history = self._memory[user_id]
+            history.insert(0, transaction)
             if len(history) > MAX_HISTORY_PER_USER:
-                self._history[user_id] = history[-MAX_HISTORY_PER_USER:]
-                logger.debug(
-                    "Trimmed history for user=%s to %d entries",
-                    user_id, MAX_HISTORY_PER_USER,
-                )
+                self._memory[user_id] = history[:MAX_HISTORY_PER_USER]
+            logger.debug("[history_store] Stored in-memory for user=%s (Redis unavailable)", user_id)
 
     async def get_user_history(self, user_id: str) -> list[dict]:
-        """Return a copy of the user's transaction history (safe for concurrent reads)."""
+        """Return up to MAX_HISTORY_PER_USER transactions for the user."""
+        # Try Redis first
+        raw_list = redis_lrange(self._redis_key(user_id), 0, MAX_HISTORY_PER_USER - 1)
+        if raw_list:
+            try:
+                return [json.loads(item) for item in raw_list]
+            except json.JSONDecodeError as exc:
+                logger.error("[history_store] Failed to decode history for user=%s: %s", user_id, exc)
+                return []
+
+        # Fallback: in-memory
         async with self._lock:
-            # Return a shallow copy so callers can't mutate the internal list
-            return list(self._history.get(user_id, []))
+            return list(self._memory.get(user_id, []))
 
     async def clear_user_history(self, user_id: str) -> None:
-        """Remove all stored history for a user (e.g. on account deletion)."""
+        """Remove all history for a user (e.g. on account deletion)."""
+        redis_delete(self._redis_key(user_id))
         async with self._lock:
-            self._history.pop(user_id, None)
+            self._memory.pop(user_id, None)
 
-    def total_users_in_cache(self) -> int:
-        """Return the number of users currently holding history in memory."""
-        return len(self._history)
+    def total_users_in_memory(self) -> int:
+        return len(self._memory)
