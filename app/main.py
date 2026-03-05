@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from app.config import get_settings
-from app.database import init_db
+from app.database import engine  # still needed for health checks
 
 # Import routers
 from app.api import transactions, users, auth, demo
@@ -24,10 +24,15 @@ async def lifespan(app: FastAPI):
     # ── Startup ──────────────────────────────────────────────────
     logger.info("🚀 VerifAI starting up (env=%s)", settings.ENVIRONMENT)
     try:
-        init_db()
-        logger.info("✅ Database connection verified (schema managed by Alembic)")
+        # Run Alembic migrations programmatically — applies any pending
+        # schema changes before the app accepts traffic.
+        from alembic.config import Config
+        from alembic import command as alembic_command
+        alembic_cfg = Config("alembic.ini")
+        alembic_command.upgrade(alembic_cfg, "head")
+        logger.info("✅ Database migrations applied (alembic upgrade head)")
     except Exception as exc:
-        logger.critical("💥 Database connection failed: %s", exc)
+        logger.critical("💥 Database migration failed: %s", exc)
         raise
 
     yield  # Application runs here

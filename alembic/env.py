@@ -1,48 +1,53 @@
+"""
+alembic/env.py — Alembic migration environment configuration.
+
+Reads DATABASE_URL from the application's Settings (via .env),
+so migrations always target the same database the app uses.
+Supports both offline (SQL dump) and online (live connection) modes.
+"""
+import os
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
+from sqlalchemy import engine_from_config, pool
 from alembic import context
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
+# ── Ensure the project root is on sys.path ──────────────────────────────────
+# Allows `from app.models import Base` to resolve when running alembic from
+# the project root directory.
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+# ── Load application settings ────────────────────────────────────────────────
+# Import Settings before importing models so the .env file is loaded first.
+from app.config import get_settings
+settings = get_settings()
+
+# ── Import ALL models via Base so autogenerate sees them ────────────────────
+# Importing Base automatically registers all mapped subclasses (User,
+# Transaction, Device, etc.) with the metadata.
+from app.models import Base  # noqa: F401 — side-effects matter here
+
+# ── Alembic config ───────────────────────────────────────────────────────────
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
+# Override the sqlalchemy.url from alembic.ini with the value from .env.
+# This ensures a single source of truth for the connection string.
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
+# Set up Python logging from the alembic.ini [loggers] section.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-from app.models import Base
-from app.config import get_settings
-
+# Tell Alembic which metadata to compare against for autogenerate.
 target_metadata = Base.metadata
-
-# Override the sqlalchemy.url from our actual FastAPI app config
-# This ensures Alembic uses the same .env file and environment logic
-settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
-
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
-
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
-
-    Calls to context.execute() here emit the given string to the
-    script output.
-
+    """
+    Offline mode: emit migration SQL to stdout without a live DB connection.
+    Useful for generating SQL scripts for DBAs or CI/CD review.
     """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
@@ -50,6 +55,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_type=True,  # Detect column type changes
     )
 
     with context.begin_transaction():
@@ -57,11 +63,9 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
-
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-
+    """
+    Online mode: connect to the live database and apply migrations directly.
+    This is the default mode used when running `alembic upgrade head`.
     """
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
@@ -71,7 +75,9 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,  # Detect column type changes
         )
 
         with context.begin_transaction():
