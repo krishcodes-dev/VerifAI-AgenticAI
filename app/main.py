@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.database import engine  # kept for any direct engine-level queries
 
 # Import routers
-from app.api import transactions, users, auth, demo
+from app.api import transactions, users, auth, demo, oauth
 
 logging.basicConfig(
     level=logging.INFO,
@@ -97,6 +97,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 app.include_router(transactions.router)
 app.include_router(users.router)
 app.include_router(auth.router)
+app.include_router(oauth.router)
 app.include_router(demo.router)
 
 

@@ -80,6 +80,17 @@ class Settings(BaseSettings):
     ML_MODEL_PATH: str = "app/ml/models/xgboost_fraud_model.pkl"
     SCALER_PATH: str = "app/ml/models/scaler.pkl"
 
+    # ─── Google OAuth ─────────────────────────────────────────────
+    # Optional — leave empty to disable Google login.
+    # Get credentials at: https://console.cloud.google.com/apis/credentials
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/google/callback"
+
+    @property
+    def GOOGLE_OAUTH_ENABLED(self) -> bool:
+        return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET)
+
     # ─── WhatsApp Business API (optional, not yet implemented) ────
     WHATSAPP_BUSINESS_ACCOUNT_ID: str = ""
     WHATSAPP_PHONE_NUMBER_ID: str = ""
