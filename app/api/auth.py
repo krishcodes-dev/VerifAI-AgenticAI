@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Request
 from pydantic import BaseModel, EmailStr, validator
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -8,9 +8,14 @@ from app.services.email_service import EmailService
 from datetime import datetime, timedelta
 import logging
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
+
+# Rate limiter — same instance as app.state.limiter (keyed by client IP)
+limiter = Limiter(key_func=get_remote_address)
 
 # ============ DEPENDENCY ============
 
@@ -104,8 +109,10 @@ class RefreshRequest(BaseModel):
 # ============ ENDPOINTS ============
 
 @router.post("/signup", response_model=TokenResponse)
+@limiter.limit("10/minute")  # Brute-force / spam protection
 async def signup(
-    request: SignupRequest,
+    request: Request,
+    body: SignupRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -114,9 +121,9 @@ async def signup(
     """
     auth_service = AuthService()
     email_service = EmailService()
-    
+
     # Check if user exists
-    existing_user = db.query(User).filter(User.email == request.email).first()
+    existing_user = db.query(User).filter(User.email == body.email).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -126,10 +133,10 @@ async def signup(
     try:
         # Create user
         user = User(
-            email=request.email,
-            password_hash=auth_service.hash_password(request.password),
-            name=request.name,
-            phone=request.phone,
+            email=body.email,
+            password_hash=auth_service.hash_password(body.password),
+            name=body.name,
+            phone=body.phone,
         )
         db.add(user)
         db.flush()  # Get user ID
@@ -169,8 +176,10 @@ async def signup(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("10/minute")  # Brute-force protection
 async def login(
-    request: LoginRequest,
+    request: Request,
+    body: LoginRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -180,8 +189,8 @@ async def login(
     auth_service = AuthService()
     
     # Find user
-    user = db.query(User).filter(User.email == request.email).first()
-    if not user or not auth_service.verify_password(request.password, user.password_hash):
+    user = db.query(User).filter(User.email == body.email).first()
+    if not user or not auth_service.verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
@@ -211,8 +220,10 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
+@limiter.limit("30/minute")
 async def refresh_token(
-    request: RefreshRequest,
+    request: Request,
+    body: RefreshRequest,
     db: Session = Depends(get_db),
 ):
     """
@@ -222,7 +233,7 @@ async def refresh_token(
     """
     auth_service = AuthService()
 
-    new_access_token = auth_service.refresh_access_token(request.refresh_token)
+    new_access_token = auth_service.refresh_access_token(body.refresh_token)
     if not new_access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -231,7 +242,7 @@ async def refresh_token(
 
     return TokenResponse(
         access_token=new_access_token,
-        refresh_token=request.refresh_token,  # Refresh token remains valid until its own expiry
+        refresh_token=body.refresh_token,
         token_type="Bearer",
         expires_in=3600,
     )
@@ -290,8 +301,10 @@ async def verify_email(
 
 
 @router.post("/forgot-password")
+@limiter.limit("5/minute")  # Prevents email flooding
 async def forgot_password(
-    request: PasswordResetRequest,
+    request: Request,
+    body: PasswordResetRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -299,9 +312,9 @@ async def forgot_password(
     """
     auth_service = AuthService()
     email_service = EmailService()
-    
+
     # Find user
-    user = db.query(User).filter(User.email == request.email).first()
+    user = db.query(User).filter(User.email == body.email).first()
     if not user:
         # Don't reveal if email exists (security)
         return {"message": "If email exists, reset link will be sent"}
@@ -317,7 +330,7 @@ async def forgot_password(
         )
         db.add(reset_token)
         db.commit()
-        
+
         # Send reset email
         reset_link = f"https://verifai.app/reset-password?token={token}"
         await email_service.send_password_reset_email(

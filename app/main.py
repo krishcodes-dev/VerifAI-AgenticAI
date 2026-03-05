@@ -1,10 +1,15 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 import logging
 
 from app.config import get_settings
-from app.database import engine  # still needed for health checks
+from app.database import engine  # kept for any direct engine-level queries
 
 # Import routers
 from app.api import transactions, users, auth, demo
@@ -16,6 +21,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+# ── Rate Limiter ──────────────────────────────────────────────────────────────
+# Uses the client's real IP as the rate-limit key.
+# The limiter instance is created here and shared via app.state.limiter
+# so individual endpoint decorators can reference it.
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
 
 @asynccontextmanager
@@ -41,7 +52,7 @@ async def lifespan(app: FastAPI):
     logger.info("👋 VerifAI shutting down")
 
 
-# Disable interactive API docs in production to avoid information leakage
+# ── FastAPI App ───────────────────────────────────────────────────────────────
 _docs_url = "/docs" if settings.DEBUG else None
 _redoc_url = "/redoc" if settings.DEBUG else None
 
@@ -54,10 +65,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS ─────────────────────────────────────────────────────────────
-# Using explicit allowed origins — wildcard with credentials is rejected
-# by browsers and is a security vulnerability. Origins are derived from
-# settings so they can be overridden per environment.
+# ── Attach rate limiter to app state ─────────────────────────────────────────
+# Endpoints import `limiter` directly from this module for their decorators.
+app.state.limiter = limiter
+
+# ── Middleware ────────────────────────────────────────────────────────────────
+app.add_middleware(SlowAPIMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -66,14 +80,27 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
-# ── Routers ──────────────────────────────────────────────────────────
+# ── Exception handlers ────────────────────────────────────────────────────────
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Return a clean 429 JSON response instead of the default HTML error page."""
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "rate_limit_exceeded",
+            "detail": "Too many requests. Please slow down and try again shortly.",
+            "retry_after": str(exc.retry_after) if hasattr(exc, "retry_after") else "60",
+        },
+    )
+
+# ── Routers ──────────────────────────────────────────────────────────────────
 app.include_router(transactions.router)
 app.include_router(users.router)
 app.include_router(auth.router)
 app.include_router(demo.router)
 
 
-# ── Health / Root ─────────────────────────────────────────────────────
+# ── Health / Root ─────────────────────────────────────────────────────────────
 @app.get("/")
 async def root():
     return {
